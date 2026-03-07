@@ -11,9 +11,9 @@ Its goal is to reduce player conflicts and give staff clearer evidence, so staff
 
 **Version:** 1.0.0
 
-> **Limited Use License (Plugin Use Only)**
-> You may run the compiled plugin on Minecraft servers and redistribute the unmodified jar.
-> No rights are granted to use or modify the source code or distribute modified binaries.
+> **MIT License**
+> This project is released under the MIT License.
+> You may use, modify, and redistribute it under those terms.
 
 ## Requirements
 - Paper 1.21.x
@@ -122,15 +122,7 @@ The standalone jar includes Cloud and Kotlin runtime classes and relocates Cloud
 The thin jar relies on Paper `libraries` to download dependencies at runtime.
 
 ## License & Copyright
-Copyright (c) 2026 Lou Morel (Canada). All rights reserved.
-
-This repository is proprietary. Permission is granted to use the compiled
-ContractScrolls plugin solely by installing and running it on Minecraft servers.
-You may redistribute the unmodified plugin binary (the official jar), provided
-the LICENSE and NOTICE remain included and the jar is unmodified.
-
-No other rights are granted. You may not use the source code, and you may not
-distribute modified versions of the plugin.
+ContractScrolls is licensed under the MIT License.
 
 See `LICENSE` for the full terms.
 
