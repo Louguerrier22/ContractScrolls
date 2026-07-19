@@ -1,24 +1,75 @@
 package me.l1cked.contractscrolls.util
 
+import me.l1cked.contractscrolls.ContractTemplate
 import me.l1cked.contractscrolls.contract.Contract
 import me.l1cked.contractscrolls.contract.ContractStatus
 import me.l1cked.contractscrolls.contract.SignLocation
 import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
 import java.time.ZoneId
 import org.bukkit.Material
+import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.BookMeta
+import org.bukkit.inventory.meta.WritableBookMeta
 
 object BookUtil {
     const val MAX_BOOK_PAGES = 100
     const val MAX_TERMS_PAGES = MAX_BOOK_PAGES - 1
+    const val MAX_PAGE_CHARACTERS = 1024
+    private val plainTextSerializer: PlainTextComponentSerializer = PlainTextComponentSerializer.plainText()
 
     fun createReviewBook(contract: Contract, zoneId: ZoneId): ItemStack {
         return createWrittenBook(contract, zoneId, "Contract Review")
     }
 
-    fun createReceiptBook(contract: Contract, zoneId: ZoneId): ItemStack {
-        return createWrittenBook(contract, zoneId, "Contract Receipt")
+    fun createTemplateBook(template: ContractTemplate): ItemStack {
+        val book = ItemStack(Material.WRITABLE_BOOK)
+        val meta = book.itemMeta as WritableBookMeta
+        meta.displayName(Component.text(template.title))
+        meta.setPages(sanitizePages(template.pages))
+        book.itemMeta = meta
+        return book
+    }
+
+    fun extractProposalPages(item: ItemStack): List<String>? {
+        val pages = when (item.type) {
+            Material.WRITABLE_BOOK -> (item.itemMeta as? WritableBookMeta)?.pages
+            Material.WRITTEN_BOOK -> (item.itemMeta as? BookMeta)?.pages()?.map(plainTextSerializer::serialize)
+            else -> null
+        } ?: return null
+
+        return sanitizePages(pages)
+    }
+
+    fun isEmptyWritableBook(item: ItemStack): Boolean {
+        if (item.type != Material.WRITABLE_BOOK) {
+            return false
+        }
+        val meta = item.itemMeta as? WritableBookMeta ?: return true
+        return meta.pages.isEmpty() || meta.pages.all { it.isBlank() }
+    }
+
+    fun openWritableBookEditor(player: Player): Boolean {
+        return try {
+            val handle = player.javaClass.getMethod("getHandle").invoke(player)
+            val craftItemStackClass = Class.forName("org.bukkit.craftbukkit.inventory.CraftItemStack")
+            val nmsItem = craftItemStackClass
+                .getMethod("asNMSCopy", ItemStack::class.java)
+                .invoke(null, player.inventory.itemInMainHand)
+            val interactionHandClass = Class.forName("net.minecraft.world.InteractionHand")
+            val mainHand = interactionHandClass.getField("MAIN_HAND").get(null)
+            handle.javaClass
+                .getMethod("openItemGui", nmsItem.javaClass, interactionHandClass)
+                .invoke(handle, nmsItem, mainHand)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun sanitizePages(pages: List<String>): List<String> {
+        return pages.take(MAX_TERMS_PAGES).map { it.take(MAX_PAGE_CHARACTERS).trimEnd() }
     }
 
     private fun createWrittenBook(contract: Contract, zoneId: ZoneId, title: String): ItemStack {

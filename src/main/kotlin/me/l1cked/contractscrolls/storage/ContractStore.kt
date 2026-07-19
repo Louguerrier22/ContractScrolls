@@ -15,6 +15,10 @@ import java.sql.Types
 import java.util.Base64
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executors
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.TimeUnit
 import java.util.logging.Level
 import org.bukkit.plugin.java.JavaPlugin
 
@@ -36,6 +40,10 @@ class ContractStore(
     @Volatile
     private var snapshotByCreatedDesc: List<Contract> = emptyList()
     private val lock = Any()
+    private val writeLock = Any()
+    private val writeExecutor = Executors.newSingleThreadExecutor(ContractStoreThreadFactory())
+    @Volatile
+    private var writeTail: CompletableFuture<Boolean> = CompletableFuture.completedFuture(true)
 
     private val tableName: String = sanitizeTableName(pluginConfig.mySql.table)
     private var dataSource: HikariDataSource? = null
@@ -47,25 +55,15 @@ class ContractStore(
     fun loadAll() {
         clearInMemory()
         val initialized = when (pluginConfig.storageMode) {
-            ContractScrollsConfig.StorageMode.MYSQL -> {
-                if (loadAllFromMySql()) {
+            ContractScrollsConfig.StorageMode.MYSQL -> loadAllFromMySql().also {
+                if (it) {
                     activeBackend = ActiveBackend.MYSQL
-                    true
-                } else if (loadAllFromSqlite()) {
-                    plugin.logger.warning("MySQL unavailable; using SQLite fallback backend.")
-                    activeBackend = ActiveBackend.SQLITE
-                    true
-                } else {
-                    false
                 }
             }
 
-            ContractScrollsConfig.StorageMode.SQLITE -> {
-                if (loadAllFromSqlite()) {
+            ContractScrollsConfig.StorageMode.SQLITE -> loadAllFromSqlite().also {
+                if (it) {
                     activeBackend = ActiveBackend.SQLITE
-                    true
-                } else {
-                    false
                 }
             }
         }
@@ -81,6 +79,21 @@ class ContractStore(
     }
 
     fun close() {
+        val tail = synchronized(writeLock) { writeTail }
+        try {
+            tail.get(15, TimeUnit.SECONDS)
+        } catch (ex: Exception) {
+            plugin.logger.log(Level.WARNING, "Timed out while waiting for pending contract writes to finish.", ex)
+        }
+        writeExecutor.shutdown()
+        try {
+            if (!writeExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                plugin.logger.warning("Contract write executor did not stop cleanly.")
+            }
+        } catch (ex: InterruptedException) {
+            Thread.currentThread().interrupt()
+            plugin.logger.log(Level.WARNING, "Interrupted while shutting down contract write executor.", ex)
+        }
         resetSqlDataSource()
         activeBackend = ActiveBackend.SQLITE
     }
@@ -90,7 +103,7 @@ class ContractStore(
             return null
         }
         synchronized(lock) {
-            return contracts[normalize(contractId)]
+            return contracts[normalize(contractId)]?.copy()
         }
     }
 
@@ -98,38 +111,52 @@ class ContractStore(
         return get(contractId) != null
     }
 
-    fun save(contract: Contract) {
+    fun save(contract: Contract): CompletableFuture<Boolean> {
         if (contract.contractId.isNullOrBlank()) {
-            return
+            return CompletableFuture.completedFuture(false)
         }
-        val persisted = when (activeBackend) {
-            ActiveBackend.MYSQL -> {
-                if (saveToMySql(contract)) {
-                    true
-                } else if (saveToSqlite(contract)) {
-                    plugin.logger.warning("MySQL save failed; switched to SQLite fallback backend.")
-                    activeBackend = ActiveBackend.SQLITE
-                    true
-                } else {
-                    plugin.logger.warning("MySQL save failed and SQLite fallback is unavailable.")
-                    false
-                }
-            }
+        val stored = contract.copy()
+        synchronized(lock) {
+            val currentRevision = contracts[normalize(stored.contractId ?: return CompletableFuture.completedFuture(false))]?.revision ?: 0L
+            val nextRevision = maxOf(stored.revision, currentRevision) + 1L
+            stored.revision = nextRevision
+            contract.revision = nextRevision
+            putIndexed(stored)
+            rebuildSnapshot()
+        }
+        return enqueuePersist(stored.copy())
+    }
 
-            ActiveBackend.SQLITE -> {
-                if (saveToSqlite(contract)) {
-                    true
-                } else {
-                    plugin.logger.warning("SQLite save failed.")
-                    false
-                }
-            }
+    fun snapshot(contractId: String?): Contract? {
+        if (contractId.isNullOrBlank()) {
+            return null
         }
-        if (!persisted) {
+        synchronized(lock) {
+            return contracts[normalize(contractId)]?.copy()
+        }
+    }
+
+    fun revert(contractId: String?, previous: Contract?) {
+        revertIfCurrentRevision(contractId, previous, null)
+    }
+
+    fun revertIfCurrentRevision(contractId: String?, previous: Contract?, expectedRevision: Long?) {
+        if (contractId.isNullOrBlank()) {
             return
         }
         synchronized(lock) {
-            putIndexed(contract)
+            val normalized = normalize(contractId)
+            val current = contracts[normalized]
+            if (expectedRevision != null && current?.revision != expectedRevision) {
+                return
+            }
+            if (current != null) {
+                unindexContract(normalized, current)
+                contracts.remove(normalized)
+            }
+            if (previous != null) {
+                putIndexed(previous.copy())
+            }
             rebuildSnapshot()
         }
     }
@@ -182,6 +209,21 @@ class ContractStore(
             counterpartyIndex.clear()
             snapshot = emptyList()
             snapshotByCreatedDesc = emptyList()
+        }
+    }
+
+    private fun enqueuePersist(contract: Contract): CompletableFuture<Boolean> {
+        synchronized(writeLock) {
+            writeTail = writeTail.handle { _, _ -> true }
+                .thenApplyAsync({ persist(contract) }, writeExecutor)
+            return writeTail
+        }
+    }
+
+    private fun persist(contract: Contract): Boolean {
+        return when (activeBackend) {
+            ActiveBackend.MYSQL -> saveToMySql(contract)
+            ActiveBackend.SQLITE -> saveToSqlite(contract)
         }
     }
 
@@ -625,7 +667,7 @@ class ContractStore(
         if (ids.isNullOrEmpty()) {
             return emptySequence()
         }
-        return ids.asSequence().mapNotNull { contracts[it] }
+        return ids.asSequence().mapNotNull { contracts[it]?.copy() }
     }
 
     private fun indexContract(id: String, contract: Contract) {
@@ -663,7 +705,7 @@ class ContractStore(
     }
 
     private fun rebuildSnapshot() {
-        val values = contracts.values.toList()
+        val values = contracts.values.map { it.copy() }
         snapshot = values
         snapshotByCreatedDesc = values.sortedByDescending { it.createdAt }
     }
@@ -696,5 +738,13 @@ class ContractStore(
 
     companion object {
         private const val PAGES_DELIMITER = "\u0000"
+    }
+
+    private class ContractStoreThreadFactory : ThreadFactory {
+        override fun newThread(runnable: Runnable): Thread {
+            return Thread(runnable, "ContractScrolls-SQL").apply {
+                isDaemon = true
+            }
+        }
     }
 }

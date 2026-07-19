@@ -4,6 +4,7 @@ import java.util.UUID
 
 class Contract {
     var dataVersion: Int = DATA_VERSION
+    var revision: Long = 0L
     var contractId: String? = null
     var proposerUuid: UUID? = null
     var proposerName: String? = null
@@ -43,6 +44,34 @@ class Contract {
     fun hashPrefix(): String {
         val value = hash ?: return ""
         return if (value.length < 6) value else value.substring(0, 6)
+    }
+
+    fun copy(): Contract {
+        val duplicate = Contract()
+        duplicate.dataVersion = dataVersion
+        duplicate.revision = revision
+        duplicate.contractId = contractId
+        duplicate.proposerUuid = proposerUuid
+        duplicate.proposerName = proposerName
+        duplicate.counterpartyUuid = counterpartyUuid
+        duplicate.counterpartyName = counterpartyName
+        duplicate.createdAt = createdAt
+        duplicate.proposerSignedAt = proposerSignedAt
+        duplicate.counterpartySignedAt = counterpartySignedAt
+        duplicate.expiresAt = expiresAt
+        duplicate.serverName = serverName
+        duplicate.pluginVersion = pluginVersion
+        duplicate.pages = pages.toMutableList()
+        duplicate.hash = hash
+        duplicate.nonce = nonce
+        duplicate.status = status
+        duplicate.proposerSignLocation = proposerSignLocation?.let {
+            SignLocation(it.world, it.x, it.y, it.z)
+        }
+        duplicate.counterpartySignLocation = counterpartySignLocation?.let {
+            SignLocation(it.world, it.x, it.y, it.z)
+        }
+        return duplicate
     }
 
     companion object {

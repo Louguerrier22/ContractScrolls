@@ -1,22 +1,246 @@
-﻿# ContractScrolls configuration
+# ContractScrolls config
 maxContractsPerPlayer: 200
 maxPendingProposals: 5
 proposalCooldownSeconds: 60
+
+# Legacy alias kept for older installs.
+proposalCreationFee: 0.0
+
+proposalRequirements:
+  # Vault fee charged when a contract is created. Set 0 to disable.
+  price: 0.0
+  # Controls template loading only.
+  # When true, templates only write into an empty book and quill in hand.
+  # When false, templates may supply a fresh book and quill.
+  requireBookAndQuill: false
+  # UUIDs that bypass proposal price and template book requirements.
+  bypassPlayers: []
+
 # 0 disables expiration. Positive values expire unsigned contracts after N hours.
 contractExpiryHours: 0
 # How often (seconds) to sweep and persist expired pending contracts.
 expirationSweepSeconds: 60
-allowThirdPartyWitness: false
-# Kept for compatibility; receipt books are currently disabled by design.
-receiptBookEnabled: false
 # Use "SERVER" to use the server's local timezone, or a ZoneId like "UTC" or "America/New_York".
 timezoneDisplay: "SERVER"
 # Remove legacy color codes ("§") from contract pages to keep receipts vanilla.
 stripColorCodes: true
 
+templates:
+  base-build:
+    title: "Base Build Commission"
+    description:
+      - "Commission a player to build or renovate a base."
+    pages:
+      - |
+        Client:
+        Builder:
+
+        Project:
+        Build location:
+        Deadline:
+      - |
+        Payment amount:
+        Payment schedule:
+
+        Materials provided by client:
+        Materials provided by builder:
+      - |
+        Design notes:
+        Allowed changes:
+
+        Sign below once both parties agree.
+  bulk-item-trade:
+    title: "Bulk Item Trade"
+    description:
+      - "Trade large item batches with clear quantities and timing."
+    pages:
+      - |
+        Seller:
+        Buyer:
+
+        Item(s):
+        Quantity:
+      - |
+        Price or return item:
+        Delivery method:
+        Delivery deadline:
+      - |
+        Quality rules:
+        Partial delivery rules:
+
+        Sign below once both parties agree.
+  shop-restock:
+    title: "Shop Restock Deal"
+    description:
+      - "Useful for supplier agreements and recurring stock runs."
+    pages:
+      - |
+        Shop owner:
+        Supplier:
+
+        Stock item(s):
+        Target quantity:
+      - |
+        Price per stack:
+        Restock schedule:
+        Chest/shop location:
+      - |
+        Late restock rules:
+        Unsold stock rules:
+
+        Sign below once both parties agree.
+  resource-haul:
+    title: "Resource Haul Contract"
+    description:
+      - "For mining, quarry, woodcutting, or delivery jobs."
+    pages:
+      - |
+        Client:
+        Gatherer:
+
+        Resource requested:
+        Quantity goal:
+      - |
+        Tool or farm use permissions:
+        Delivery chest/location:
+        Deadline:
+      - |
+        Payment:
+        Bonus conditions:
+
+        Sign below once both parties agree.
+  farm-access:
+    title: "Farm Access Agreement"
+    description:
+      - "Grant farm use with clear rules and payment."
+    pages:
+      - |
+        Owner:
+        Visitor:
+
+        Farm or grinder:
+        Access start:
+        Access end:
+      - |
+        Usage rules:
+        Allowed redstone settings:
+        Storage/chest rules:
+      - |
+        Payment:
+        Damage liability:
+
+        Sign below once both parties agree.
+  land-rental:
+    title: "Land Rental"
+    description:
+      - "A simple rent agreement for a plot or base."
+    pages:
+      - |
+        Parties:
+        Owner:
+        Renter:
+
+        Property:
+        Rental term:
+      - |
+        Payment schedule:
+        Payment amount:
+
+        Late payment rules:
+        Access rules:
+      - |
+        Extra conditions:
+
+
+        Sign below once both parties agree.
+  redstone-build:
+    title: "Redstone Build Order"
+    description:
+      - "For farms, doors, sorters, and other technical builds."
+    pages:
+      - |
+        Client:
+        Engineer:
+
+        Requested system:
+        Required rates/output:
+        Deadline:
+      - |
+        Materials supplied by client:
+        Materials supplied by engineer:
+        Access to base/chunks:
+      - |
+        Payment:
+        Testing requirements:
+        Revision policy:
+
+
+        Sign below once both parties agree.
+  villager-hall:
+    title: "Villager Hall Build"
+    description:
+      - "For breeder, trading hall, or curing station projects."
+    pages:
+      - |
+        Client:
+        Builder:
+
+        Project type:
+        Villager count target:
+      - |
+        Work location:
+        Safety rules:
+        Delivery deadline:
+      - |
+        Payment:
+        Responsibility for losses:
+
+        Sign below once both parties agree.
+  guild-alliance:
+    title: "Guild Alliance"
+    description:
+      - "Mutual support and territory expectations."
+    pages:
+      - |
+        Guild one:
+        Guild two:
+
+        Agreement start date:
+        Agreement duration:
+      - |
+        Shared goals:
+        Territory rules:
+        Resource sharing:
+      - |
+        Violation terms:
+        Exit terms:
+
+
+        Sign below once both parties agree.
+  nether-tunnel:
+    title: "Nether Tunnel Project"
+    description:
+      - "For highways, ice roads, or secure transport tunnels."
+    pages:
+      - |
+        Client:
+        Builder:
+
+        Route:
+        Start coords:
+        End coords:
+      - |
+        Tunnel style/spec:
+        Safety expectations:
+        Deadline:
+      - |
+        Payment:
+        Block palette:
+
+        Sign below once both parties agree.
+
 storage:
   # SQLITE or MYSQL
-  # MYSQL mode automatically falls back to SQLITE if MySQL is unavailable.
   mode: SQLITE
   mysql:
     host: "127.0.0.1"
@@ -29,5 +253,3 @@ storage:
   sqlite:
     # Relative paths resolve inside plugins/ContractScrolls/
     file: "contracts.db"
-
-

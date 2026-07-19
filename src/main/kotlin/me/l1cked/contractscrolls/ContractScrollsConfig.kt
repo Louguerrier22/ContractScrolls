@@ -1,26 +1,42 @@
 package me.l1cked.contractscrolls
 
+import me.l1cked.contractscrolls.util.BookUtil
 import java.time.ZoneId
 import java.util.Locale
+import java.util.UUID
 import org.bukkit.configuration.file.FileConfiguration
 
 class ContractScrollsConfig private constructor(
     val maxContractsPerPlayer: Int,
     val maxPendingProposals: Int,
     val proposalCooldownSeconds: Int,
+    val proposalRequirements: ProposalRequirements,
     val contractExpiryHours: Int,
     val expirationSweepSeconds: Int,
-    val allowThirdPartyWitness: Boolean,
-    val receiptBookEnabled: Boolean,
     val stripColorCodes: Boolean,
     val zoneId: ZoneId,
+    val templates: List<ContractTemplate>,
     val storageMode: StorageMode,
     val mySql: MySqlConfig,
     val sqlite: SqliteConfig
 ) {
+    val proposalCreationFee: Double
+        get() = proposalRequirements.price
+
+    val requireBookAndQuill: Boolean
+        get() = proposalRequirements.requireBookAndQuill
+
     enum class StorageMode {
         MYSQL,
         SQLITE
+    }
+
+    class ProposalRequirements(
+        val price: Double,
+        val requireBookAndQuill: Boolean,
+        val bypassPlayers: Set<UUID>
+    ) {
+        fun isBypassed(playerId: UUID): Boolean = bypassPlayers.contains(playerId)
     }
 
     class MySqlConfig(
@@ -40,14 +56,23 @@ class ContractScrollsConfig private constructor(
     companion object {
         fun from(config: FileConfiguration): ContractScrollsConfig {
             val maxContractsPerPlayer = config.getInt("maxContractsPerPlayer", 200)
-            val maxPendingProposals = config.getInt("maxPendingProposals", 5)
+            val maxPendingProposals = config.getInt("maxPendingProposals", 5).coerceAtLeast(0)
             val proposalCooldownSeconds = config.getInt("proposalCooldownSeconds", 60)
+            val legacyProposalFee = config.getDouble("proposalCreationFee", 0.0).coerceAtLeast(0.0)
+            val proposalRequirements = ProposalRequirements(
+                price = config.getDouble("proposalRequirements.price", legacyProposalFee).coerceAtLeast(0.0),
+                requireBookAndQuill = config.getBoolean("proposalRequirements.requireBookAndQuill", false),
+                bypassPlayers = config.getStringList("proposalRequirements.bypassPlayers")
+                    .mapNotNull { raw ->
+                        runCatching { UUID.fromString(raw.trim()) }.getOrNull()
+                    }
+                    .toSet()
+            )
             val contractExpiryHours = config.getInt("contractExpiryHours", 0).coerceAtLeast(0)
             val expirationSweepSeconds = config.getInt("expirationSweepSeconds", 60).coerceAtLeast(15)
-            val allowThirdPartyWitness = config.getBoolean("allowThirdPartyWitness", false)
-            val receiptBookEnabled = config.getBoolean("receiptBookEnabled", true)
             val stripColorCodes = config.getBoolean("stripColorCodes", true)
             val timezoneDisplay = config.getString("timezoneDisplay", "SERVER")
+            val templates = parseTemplates(config)
 
             val storageMode = parseStorageMode(config.getString("storage.mode", "SQLITE"))
             val mySql = MySqlConfig(
@@ -76,16 +101,42 @@ class ContractScrollsConfig private constructor(
                 maxContractsPerPlayer,
                 maxPendingProposals,
                 proposalCooldownSeconds,
+                proposalRequirements,
                 contractExpiryHours,
                 expirationSweepSeconds,
-                allowThirdPartyWitness,
-                receiptBookEnabled,
                 stripColorCodes,
                 zoneId,
+                templates,
                 storageMode,
                 mySql,
                 sqlite
             )
+        }
+
+        private fun parseTemplates(config: FileConfiguration): List<ContractTemplate> {
+            val section = config.getConfigurationSection("templates") ?: return emptyList()
+            return section.getKeys(false).asSequence()
+                .mapNotNull { key ->
+                    val base = "templates.$key"
+                    val pages = config.getStringList("$base.pages")
+                        .take(BookUtil.MAX_TERMS_PAGES)
+                        .map { it.trimEnd() }
+                        .filter { it.isNotBlank() }
+                    if (pages.isEmpty()) {
+                        return@mapNotNull null
+                    }
+                    ContractTemplate(
+                        id = key,
+                        title = config.getString("$base.title", key.replace('-', ' ').replaceFirstChar { it.titlecase(Locale.ROOT) })
+                            ?: key,
+                        description = config.getStringList("$base.description")
+                            .map { it.trim() }
+                            .filter { it.isNotBlank() },
+                        pages = pages
+                    )
+                }
+                .sortedBy { it.title.lowercase(Locale.ROOT) }
+                .toList()
         }
 
         private fun parseStorageMode(value: String?): StorageMode {
